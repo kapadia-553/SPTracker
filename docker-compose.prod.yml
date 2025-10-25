@@ -1,0 +1,174 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-sptrack}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    networks:
+      - sptrack-network
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    networks:
+      - sptrack-network
+
+  minio:
+    image: minio/minio:latest
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    volumes:
+      - minio_data:/data
+    command: server /data --console-address ":9001"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    networks:
+      - sptrack-network
+
+  clamav:
+    image: clamav/clamav:latest
+    volumes:
+      - clamav_data:/var/lib/clamav
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "clamdscan", "--version"]
+      interval: 60s
+      timeout: 30s
+      retries: 3
+    networks:
+      - sptrack-network
+
+  api:
+    build:
+      context: ./backend
+      dockerfile: src/SpTrack.Api/Dockerfile
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Production
+      - DB__CONNECTION_STRING=Host=postgres;Port=5432;Database=${POSTGRES_DB:-sptrack};Username=${POSTGRES_USER:-postgres};Password=${POSTGRES_PASSWORD}
+      - JWT__ISSUER=${JWT_ISSUER}
+      - JWT__AUDIENCE=${JWT_AUDIENCE}
+      - JWT__KEY=${JWT_KEY}
+      - SMTP__HOST=${SMTP_HOST}
+      - SMTP__PORT=${SMTP_PORT}
+      - SMTP__USER=${SMTP_USER}
+      - SMTP__PASS=${SMTP_PASS}
+      - SMTP__FROM=${SMTP_FROM}
+      - IMAP__HOST=${IMAP_HOST}
+      - IMAP__PORT=${IMAP_PORT}
+      - IMAP__USER=${IMAP_USER}
+      - IMAP__PASS=${IMAP_PASS}
+      - STORAGE__S3__ENDPOINT=http://minio:9000
+      - STORAGE__S3__KEY=${MINIO_ROOT_USER}
+      - STORAGE__S3__SECRET=${MINIO_ROOT_PASSWORD}
+      - STORAGE__S3__BUCKET=sptrack-attachments
+      - APP__BASE_URL=${APP_BASE_URL}
+      - TENANT__DEFAULT_TIMEZONE=${TENANT_DEFAULT_TIMEZONE:-Asia/Dubai}
+      - PORTAL__ADMIN_URL=${PORTAL_ADMIN_URL}
+      - PORTAL__AGENT_URL=${PORTAL_AGENT_URL}
+      - REDIS__CONNECTION_STRING=redis:6379
+      - CLAMAV__HOST=clamav
+      - CLAMAV__PORT=3310
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    volumes:
+      - ./backend/logs:/app/logs
+    restart: unless-stopped
+    networks:
+      - sptrack-network
+
+  worker:
+    build:
+      context: ./backend
+      dockerfile: src/SpTrack.Worker/Dockerfile
+    environment:
+      - DB__CONNECTION_STRING=Host=postgres;Port=5432;Database=${POSTGRES_DB:-sptrack};Username=${POSTGRES_USER:-postgres};Password=${POSTGRES_PASSWORD}
+      - REDIS__CONNECTION_STRING=redis:6379
+      - SMTP__HOST=${SMTP_HOST}
+      - SMTP__PORT=${SMTP_PORT}
+      - SMTP__USER=${SMTP_USER}
+      - SMTP__PASS=${SMTP_PASS}
+      - SMTP__FROM=${SMTP_FROM}
+      - IMAP__HOST=${IMAP_HOST}
+      - IMAP__PORT=${IMAP_PORT}
+      - IMAP__USER=${IMAP_USER}
+      - IMAP__PASS=${IMAP_PASS}
+      - APP__BASE_URL=${APP_BASE_URL}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./backend/logs:/app/logs
+    restart: unless-stopped
+    networks:
+      - sptrack-network
+
+  agent:
+    build:
+      context: ./frontend
+      dockerfile: agent/Dockerfile
+      args:
+        - API_URL=${APP_BASE_URL}
+    restart: unless-stopped
+    networks:
+      - sptrack-network
+
+  portal:
+    build:
+      context: ./frontend
+      dockerfile: portal/Dockerfile
+      args:
+        - API_URL=${APP_BASE_URL}
+    restart: unless-stopped
+    networks:
+      - sptrack-network
+
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.prod.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+    depends_on:
+      - api
+      - agent
+      - portal
+    restart: unless-stopped
+    networks:
+      - sptrack-network
+
+volumes:
+  postgres_data:
+  minio_data:
+  clamav_data:
+
+networks:
+  sptrack-network:
+    driver: bridge

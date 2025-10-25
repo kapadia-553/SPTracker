@@ -1,0 +1,27 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(docker-compose up:*)",
+      "Bash(docker-compose:*)",
+      "Bash(dotnet build)",
+      "Bash(dotnet clean:*)",
+      "Bash(npm run build:agent:*)",
+      "Bash(curl:*)",
+      "Bash(docker:*)",
+      "Bash(sed:*)",
+      "Bash(npm run build:*)",
+      "Bash(xargs dirname:*)",
+      "Bash(dotnet ef migrations add:*)",
+      "Bash(dotnet ef migrations remove:*)",
+      "Bash(grep:*)",
+      "Bash(ng build:*)",
+      "Bash(npx ng build:*)",
+      "Bash(find:*)",
+      "Bash(dotnet ef database update:*)",
+      "Bash(dotnet new:*)",
+      "Bash(test:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

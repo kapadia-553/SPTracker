@@ -1,0 +1,515 @@
+================================================================================
+                    SP TRACKER - DEPLOYMENT ARCHITECTURE
+================================================================================
+
+
+                              INTERNET
+                                 |
+                                 |
+                     +-----------+-----------+
+                     |                       |
+                  Port 80                Port 443
+                   (HTTP)                 (HTTPS)
+                     |                       |
+                     +----------+------------+
+                                |
+                                v
+                      +-------------------+
+                      |   HOSTINGER VPS   |
+                      |   Ubuntu Server   |
+                      +-------------------+
+                                |
+                                v
+                      +-------------------+
+                      |    UFW Firewall   |
+                      |  Ports: 22,80,443 |
+                      +-------------------+
+                                |
+                                v
+        =========================================================
+        =                DOCKER ENVIRONMENT                     =
+        =========================================================
+                                |
+                                v
+                    +-----------------------+
+                    |    Nginx Container    |
+                    |  (Reverse Proxy)      |
+                    |   - Rate Limiting     |
+                    |   - SSL Termination   |
+                    |   - Load Balancing    |
+                    +-----------------------+
+                       |        |        |
+         +-------------+        |        +-------------+
+         |                      |                      |
+         v                      v                      v
+   +------------+       +--------------+       +-------------+
+   |   Agent    |       |     API      |       |   Portal    |
+   |  Container |       |  Container   |       |  Container  |
+   |  (Angular) |       | (ASP.NET 8)  |       |  (Angular)  |
+   |            |       |              |       |             |
+   | Port: 80   |       | Port: 8080   |       | Port: 80    |
+   +------------+       +--------------+       +-------------+
+                               |
+                               |
+          +--------------------+--------------------+
+          |                    |                    |
+          v                    v                    v
+   +------------+       +------------+       +-------------+
+   | PostgreSQL |       |   Redis    |       |   Worker    |
+   | Container  |       | Container  |       |  Container  |
+   |            |       |            |       | (Hangfire)  |
+   | Port: 5432 |       | Port: 6379 |       |             |
+   +------------+       +------------+       +-------------+
+          |                                         |
+          |                                         |
+          +--------------------+--------------------+
+                               |
+             +-----------------+-----------------+
+             |                                   |
+             v                                   v
+      +------------+                      +------------+
+      |   MinIO    |                      |   ClamAV   |
+      | Container  |                      | Container  |
+      | (S3 Store) |                      | (AV Scan)  |
+      |            |                      |            |
+      | Port: 9000 |                      | Port: 3310 |
+      | Port: 9001 |                      +------------+
+      +------------+
+             |
+             v
+     +---------------+
+     | Persistent    |
+     | Volumes:      |
+     | - postgres_   |
+     | - minio_      |
+     | - clamav_     |
+     +---------------+
+
+
+================================================================================
+                           NETWORK FLOW DIAGRAM
+================================================================================
+
+
+  USER BROWSER                           HOSTINGER VPS
+  ============                           =============
+
+      |
+      |  https://yourdomain.com
+      |
+      +------------------------------------->  Nginx :80/443
+                                                  |
+                                                  |
+                                                  |
+         +----------------------------------------+
+         |                |                       |
+         |                |                       |
+         v                v                       v
+    /api/*          /agent/*                 /portal/*
+         |                |                       |
+         v                v                       v
+    API Container   Agent Container      Portal Container
+         |                                        |
+         |                                        |
+         v                                        v
+    PostgreSQL                               (Static Files)
+    Redis
+    MinIO
+    Worker
+
+
+================================================================================
+                         SERVICE DEPENDENCIES
+================================================================================
+
+
+                        +---------------+
+                        |  PostgreSQL   |
+                        |  (Database)   |
+                        +-------+-------+
+                                ^
+                                |
+                    +-----------+-----------+
+                    |                       |
+            +-------+-------+       +-------+-------+
+            |     API       |       |    Worker     |
+            |  (Backend)    |       | (Background)  |
+            +-------+-------+       +-------+-------+
+                    ^                       ^
+                    |                       |
+                    +----------+------------+
+                               |
+                       +-------+-------+
+                       |    Redis      |
+                       |   (Cache)     |
+                       +---------------+
+
+
+            +---------------+           +---------------+
+            |     MinIO     |           |    ClamAV     |
+            | (File Store)  |           | (AV Scanner)  |
+            +-------+-------+           +-------+-------+
+                    ^                           ^
+                    |                           |
+                    +------------+--------------+
+                                 |
+                         +-------+-------+
+                         |     API       |
+                         | (File Upload) |
+                         +---------------+
+
+
+            +---------------+           +---------------+
+            |   SMTP/IMAP   |           |     Users     |
+            | (Email Srv)   |           | (Web Browser) |
+            +-------+-------+           +-------+-------+
+                    ^                           ^
+                    |                           |
+                    +------------+--------------+
+                                 |
+                         +-------+-------+
+                         |     API       |
+                         | (Email Jobs)  |
+                         +---------------+
+
+
+================================================================================
+                        DATA FLOW - CREATE TICKET
+================================================================================
+
+
+   User Browser                                      VPS Docker Containers
+   ============                                      =====================
+
+        |
+        |  POST /api/tickets
+        |  {title, description, ...}
+        |
+        +------------------------------------------>  Nginx
+                                                         |
+                                                         | proxy_pass
+                                                         v
+                                                      API Container
+                                                         |
+                                                         | Validate JWT
+                                                         | Check Permissions
+                                                         |
+                                                         v
+                                                    TicketsController
+                                                         |
+                                                         | Create Command
+                                                         v
+                                                    Ticket Entity
+                                                         |
+                                                         | Save
+                                                         v
+                                                    PostgreSQL
+                                                         |
+                                                         | Calculate SLA
+                                                         v
+                                                    SLA Target Created
+                                                         |
+                                                         | Queue Job
+                                                         v
+                                                       Redis
+                                                         |
+                                                         | Worker picks up
+                                                         v
+                                                    Worker Container
+                                                         |
+                                                         | Send Email
+                                                         v
+                                                      SMTP Server
+                                                         |
+                                                         v
+                                                      Assignee
+
+
+================================================================================
+                    DATA FLOW - UPLOAD ATTACHMENT
+================================================================================
+
+
+   User Browser                                      VPS Docker Containers
+   ============                                      =====================
+
+        |
+        |  POST /api/tickets/{key}/attachments
+        |  multipart/form-data (file)
+        |
+        +------------------------------------------>  Nginx
+                                                         |
+                                                         | proxy_pass
+                                                         v
+                                                      API Container
+                                                         |
+                                                         | Receive File
+                                                         | Create Stream
+                                                         |
+                                                         v
+                                                    S3StorageService
+                                                         |
+                                                         | Upload
+                                                         v
+                                                      MinIO
+                                                         |
+                                                         | Save metadata
+                                                         v
+                                                    PostgreSQL
+                                                         |
+                                                         | Queue scan
+                                                         v
+                                                       Redis
+                                                         |
+                                                         | Worker picks up
+                                                         v
+                                                    Worker Container
+                                                         |
+                                                         | Scan File
+                                                         v
+                                                      ClamAV
+                                                         |
+                                                         | Update status
+                                                         v
+                                                    PostgreSQL
+
+
+================================================================================
+                   DOCKER NETWORK ARCHITECTURE
+================================================================================
+
+
+    +================================================================+
+    |              Docker Network: sptrack-network                   |
+    |                      (Bridge Mode)                             |
+    +================================================================+
+    |                                                                |
+    |   +----------+  +----------+  +----------+  +----------+      |
+    |   |  Nginx   |  |   API    |  |  Agent   |  | Portal   |      |
+    |   |  :80/443 |  |  :8080   |  |   :80    |  |   :80    |      |
+    |   +----------+  +----------+  +----------+  +----------+      |
+    |                                                                |
+    |   +----------+  +----------+  +----------+  +----------+      |
+    |   |PostgreSQL|  |  Redis   |  |  MinIO   |  |  ClamAV  |      |
+    |   |  :5432   |  |  :6379   |  | :9000/01 |  |  :3310   |      |
+    |   +----------+  +----------+  +----------+  +----------+      |
+    |                                                                |
+    |   +----------+                                                 |
+    |   |  Worker  |                                                 |
+    |   | (no port)|                                                 |
+    |   +----------+                                                 |
+    |                                                                |
+    +================================================================+
+                                |
+                                | Only Nginx exposed to host
+                                |
+                      +---------+---------+
+                      |   Host Network    |
+                      |   Port 80 -> 80   |
+                      |   Port 443 -> 443 |
+                      +-------------------+
+
+
+================================================================================
+                         VOLUME PERSISTENCE
+================================================================================
+
+
+    Host Filesystem                       Docker Volumes
+    ===============                       ==============
+
+    /opt/SPTracker/
+         |
+         +-- backend/logs/     <-------->  /app/logs (API & Worker)
+         |
+         +-- nginx/ssl/        <-------->  /etc/nginx/ssl (Nginx)
+         |
+         +-- (Docker Volumes - managed by Docker)
+                                           |
+                                           +-- postgres_data
+                                           |   /var/lib/postgresql/data
+                                           |
+                                           +-- minio_data
+                                           |   /data
+                                           |
+                                           +-- clamav_data
+                                               /var/lib/clamav
+
+
+================================================================================
+                       EXTERNAL SERVICES
+================================================================================
+
+
+    SP Tracker VPS                         External Services
+    ==============                         =================
+
+    API Container
+         |
+         |  Email Notifications
+         +-------------------------->  SMTP Server
+         |                            (Office365, Gmail, SendGrid)
+         |
+         |  Email-to-Ticket
+         +-------------------------->  IMAP Server
+         |                            (Office365, Gmail)
+         |
+         |  (Future: SMS)
+         +-------------------------->  SMS Gateway
+         |                            (Twilio, etc.)
+         |
+         |  (Future: Cloud Storage)
+         +-------------------------->  AWS S3
+                                      Azure Blob
+                                      GCS
+
+
+================================================================================
+                     DEPLOYMENT WORKFLOW
+================================================================================
+
+
+    Developer                  Git Repo              VPS Server
+    =========                  ========              ==========
+
+        |                         |                       |
+        | git push                |                       |
+        +------------------------>|                       |
+                                  |                       |
+                                  |  git pull             |
+                                  |<----------------------+
+                                  |                       |
+                                  |                       | docker-compose build
+                                  |                       +--+
+                                  |                       |  |
+                                  |                       |<-+
+                                  |                       |
+                                  |                       | docker-compose up
+                                  |                       +--+
+                                  |                       |  |
+                                  |                       |  | Pull images
+                                  |                       |  | Create containers
+                                  |                       |  | Start services
+                                  |                       |  |
+                                  |                       |<-+
+                                  |                       |
+                                  |                       | Health checks
+                                  |                       | Migrations
+                                  |                       |
+                                  |                       v
+                                  |                  Application Running
+
+
+================================================================================
+                       BACKUP ARCHITECTURE
+================================================================================
+
+
+    SP Tracker VPS                        Backup Storage
+    ==============                        ==============
+
+    PostgreSQL                                  |
+         |                                      |
+         | pg_dump (daily 2 AM)                |
+         +------------------------------------->|
+                                                | /opt/backups/db/
+                                                |   - backup_20251023.sql.gz
+                                                |   - backup_20251022.sql.gz
+                                                |   - ...
+    MinIO                                       |
+         |                                      |
+         | mc mirror (daily 2 AM)              |
+         +------------------------------------->|
+                                                | /opt/backups/minio/
+                                                |   - attachments/
+                                                |   - ...
+                                                |
+                                           Retention: 7 days
+
+
+================================================================================
+                      MONITORING POINTS
+================================================================================
+
+
+    +----------------------------------------------------------------+
+    |  Container Level                                               |
+    |  - docker stats (CPU, Memory, Network)                         |
+    |  - docker-compose ps (Status)                                  |
+    +----------------------------------------------------------------+
+
+    +----------------------------------------------------------------+
+    |  Application Level                                             |
+    |  - /api/health (API health check)                              |
+    |  - /hangfire (Background jobs dashboard)                       |
+    |  - Application logs (backend/logs/)                            |
+    +----------------------------------------------------------------+
+
+    +----------------------------------------------------------------+
+    |  Infrastructure Level                                          |
+    |  - htop (System resources)                                     |
+    |  - df -h (Disk usage)                                          |
+    |  - ufw status (Firewall)                                       |
+    +----------------------------------------------------------------+
+
+    +----------------------------------------------------------------+
+    |  Database Level                                                |
+    |  - PostgreSQL logs                                             |
+    |  - Connection pool metrics                                     |
+    |  - Query performance                                           |
+    +----------------------------------------------------------------+
+
+
+================================================================================
+                         SCALABILITY OPTIONS
+================================================================================
+
+
+    Current Architecture              Future Scaling
+    ====================              ==============
+
+    Single VPS                        Load Balancer
+         |                                   |
+         |                          +--------+--------+
+         v                          |                 |
+    All Services                    v                 v
+                                VPS 1 (API)       VPS 2 (API)
+                                    |                 |
+                                    +--------+--------+
+                                             |
+                                             v
+                                    Shared PostgreSQL
+                                    (Cloud Database)
+                                             |
+                                    Shared Redis
+                                    (Cloud Cache)
+                                             |
+                                    Shared MinIO/S3
+                                    (Cloud Storage)
+
+
+================================================================================
+                              LEGEND
+================================================================================
+
+    +--------+      Container / Service
+    |        |
+    +--------+
+
+    |
+    v            Data Flow / Dependency
+
+    +--------+   Docker Volume
+    | Volume |
+    +--------+
+
+    ========     Network Boundary
+
+    <----->      Bidirectional Communication
+
+    ----->       Unidirectional Communication
+
+
+================================================================================
+                           END OF DIAGRAM
+================================================================================
