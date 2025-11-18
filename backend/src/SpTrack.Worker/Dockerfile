@@ -1,24 +1,22 @@
-# Build
+# Build stage
 FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
 WORKDIR /src
 
-# Copy project files (corrected paths)
-COPY src/SpTrack.Worker/SpTrack.Worker.csproj src/SpTrack.Worker/
-COPY src/SpTrack.Application/SpTrack.Application.csproj src/SpTrack.Application/
-COPY src/SpTrack.Domain/SpTrack.Domain.csproj src/SpTrack.Domain/
-COPY src/SpTrack.Infrastructure/SpTrack.Infrastructure.csproj src/SpTrack.Infrastructure/
+# Copy project files
+COPY backend/src/SpTrack.Worker/SpTrack.Worker.csproj SpTrack.Worker/
+COPY backend/src/SpTrack.Application/SpTrack.Application.csproj SpTrack.Application/
+COPY backend/src/SpTrack.Domain/SpTrack.Domain.csproj SpTrack.Domain/
+COPY backend/src/SpTrack.Infrastructure/SpTrack.Infrastructure.csproj SpTrack.Infrastructure/
 
 # Restore dependencies
-RUN dotnet restore src/SpTrack.Worker/SpTrack.Worker.csproj
+RUN dotnet restore SpTrack.Worker/SpTrack.Worker.csproj
 
-# Copy the full backend folder
-COPY . .
+# Copy full backend source code
+COPY backend/src/ ./  
 
-# Go to worker project folder
-WORKDIR /src/src/SpTrack.Worker
-
-# Publish worker project
-RUN dotnet publish "SpTrack.Worker.csproj" -c Release -o /app/publish
+# Build/publish worker
+WORKDIR /src/SpTrack.Worker
+RUN dotnet publish SpTrack.Worker.csproj -c Release -o /app/publish
 
 # Runtime image
 FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS final
