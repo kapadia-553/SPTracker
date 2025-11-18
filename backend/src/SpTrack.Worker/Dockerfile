@@ -11,7 +11,7 @@ RUN dotnet restore src/SpTrack.Worker/SpTrack.Worker.csproj
 
 # copy the rest and publish
 COPY . .
-WORKDIR /src/src/SpTrack.Worker
+WORKDIR /src/backend/src/SpTrack.Worker
 RUN dotnet publish SpTrack.Worker.csproj -c Release -o /app/publish
 
 # Change this line - use aspnet instead of runtime
@@ -19,3 +19,6 @@ FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS final
 WORKDIR /app
 COPY --from=build /app/publish .
 ENTRYPOINT ["dotnet", "SpTrack.Worker.dll"]
+
+
+
