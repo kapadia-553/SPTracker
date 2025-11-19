@@ -23,25 +23,9 @@ namespace SpTrack.Infrastructure.Migrations
                 name: "PK_UserRoles",
                 table: "UserRoles");
 
-            migrationBuilder.DropIndex(
-                name: "IX_UserRoles_UserId_TenantId_Role",
-                table: "UserRoles");
-
-            migrationBuilder.DropIndex(
-                name: "IX_Tickets_TenantId_Key",
-                table: "Tickets");
-
-            migrationBuilder.DropIndex(
-                name: "IX_Tenants_Slug",
-                table: "Tenants");
-
-            migrationBuilder.DropIndex(
-                name: "IX_Projects_TenantId_Key",
-                table: "Projects");
-
-            migrationBuilder.DropColumn(
-                name: "Id",
-                table: "UserRoles");
+            // Note: Indexes IX_UserRoles_UserId_TenantId_Role, IX_Tickets_TenantId_Key,
+            // IX_Tenants_Slug, and IX_Projects_TenantId_Key don't exist in InitialCreate
+            // so we skip dropping them to avoid errors
 
             migrationBuilder.AlterColumn<string>(
                 name: "Slug",
@@ -153,13 +137,6 @@ namespace SpTrack.Infrastructure.Migrations
                 name: "IX_Projects_TenantId",
                 table: "Projects");
 
-            migrationBuilder.AddColumn<Guid>(
-                name: "Id",
-                table: "UserRoles",
-                type: "uuid",
-                nullable: false,
-                defaultValue: new Guid("00000000-0000-0000-0000-000000000000"));
-
             migrationBuilder.AlterColumn<string>(
                 name: "Slug",
                 table: "Tenants",
@@ -199,31 +176,11 @@ namespace SpTrack.Infrastructure.Migrations
             migrationBuilder.AddPrimaryKey(
                 name: "PK_UserRoles",
                 table: "UserRoles",
-                column: "Id");
+                columns: new[] { "UserId", "TenantId", "Role" });
 
-            migrationBuilder.CreateIndex(
-                name: "IX_UserRoles_UserId_TenantId_Role",
-                table: "UserRoles",
-                columns: new[] { "UserId", "TenantId", "Role" },
-                unique: true);
-
-            migrationBuilder.CreateIndex(
-                name: "IX_Tickets_TenantId_Key",
-                table: "Tickets",
-                columns: new[] { "TenantId", "Key" },
-                unique: true);
-
-            migrationBuilder.CreateIndex(
-                name: "IX_Tenants_Slug",
-                table: "Tenants",
-                column: "Slug",
-                unique: true);
-
-            migrationBuilder.CreateIndex(
-                name: "IX_Projects_TenantId_Key",
-                table: "Projects",
-                columns: new[] { "TenantId", "Key" },
-                unique: true);
+            // Note: Not recreating indexes that didn't exist in InitialCreate
+            // (IX_UserRoles_UserId_TenantId_Role, IX_Tickets_TenantId_Key,
+            // IX_Tenants_Slug, IX_Projects_TenantId_Key)
 
             migrationBuilder.AddForeignKey(
                 name: "FK_AuditLogs_Tenants_TenantId",
