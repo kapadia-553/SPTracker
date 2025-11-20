@@ -16,6 +16,8 @@ services:
       interval: 30s
       timeout: 10s
       retries: 5
+    networks:
+      - sptrack-network
 
   redis:
     image: redis:7-alpine
@@ -26,6 +28,8 @@ services:
       interval: 30s
       timeout: 10s
       retries: 5
+    networks:
+      - sptrack-network
 
   minio:
     image: minio/minio:latest
@@ -43,6 +47,8 @@ services:
       interval: 30s
       timeout: 10s
       retries: 5
+    networks:
+      - sptrack-network
 
   clamav:
     image: clamav/clamav:latest
@@ -55,6 +61,8 @@ services:
       interval: 60s
       timeout: 30s
       retries: 3
+    networks:
+      - sptrack-network
 
   api:
     build:
@@ -97,6 +105,8 @@ services:
         condition: service_healthy
     volumes:
       - ./backend/logs:/app/logs
+    networks:
+      - sptrack-network
 
   worker:
     build:
@@ -122,6 +132,8 @@ services:
         condition: service_healthy
     volumes:
       - ./backend/logs:/app/logs
+    networks:
+      - sptrack-network
 
   agent:
     build:
@@ -133,6 +145,8 @@ services:
       - "8080:80"
     depends_on:
       - api
+    networks:
+      - sptrack-network
 
   portal:
     build:
@@ -144,7 +158,9 @@ services:
       - "8081:80"
     depends_on:
       - api
-
+    networks:
+      - sptrack-network
+      
   nginx:
     image: nginx:alpine
     ports:
@@ -156,6 +172,9 @@ services:
       - agent
       - portal
     restart: unless-stopped
+    networks:
+      - sptrack-network
+
 
 volumes:
   postgres_data:
