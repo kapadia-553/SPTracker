@@ -145,7 +145,7 @@ services:
     depends_on:
       - api
 
- nginx:
+  nginx:
    image: nginx:alpine
    ports:
      - "80:80"
@@ -155,6 +155,10 @@ services:
      - api
      - agent
      - portal
+   restart: unless-stopped
+   networks:
+     - sptrack-network
+
 
 
 
