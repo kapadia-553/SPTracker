@@ -190,6 +190,7 @@ public class AdminController : ControllerBase
                 var agentRole = new UserRole
                 {
                     UserId = agent.Id,
+                    TenantId = demoTenant.Id,
                     Role = "Agent",
                     CreatedAt = DateTime.UtcNow
                 };
@@ -203,6 +204,7 @@ public class AdminController : ControllerBase
                 var customerRole = new UserRole
                 {
                     UserId = customer.Id,
+                    TenantId = demoTenant.Id,
                     Role = "CustomerUser",
                     CreatedAt = DateTime.UtcNow
                 };
