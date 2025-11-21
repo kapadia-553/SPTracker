@@ -161,7 +161,7 @@ services:
     networks:
       - sptrack-network
       
-    nginx:
+  nginx:
     image: nginx:alpine
     ports:
       - "80:80"
